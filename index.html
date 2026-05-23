@@ -242,60 +242,66 @@
 
   <script>
 
-async function generateCode(){
+async function generateCode() {
 
   const number =
-    document.getElementById("number").value
+    document.getElementById("number").value.trim()
 
-  if(!number){
+  // validate
+  if (!number) {
 
     alert("Enter WhatsApp number")
     return
   }
 
-  document.getElementById("code")
-  .innerText = "Loading..."
-
+  // show loading
   document.getElementById("pairBox")
-  .style.display = "block"
+    .style.display = "block"
 
-  try{
+  document.getElementById("code")
+    .innerText = "Generating..."
 
-    const response =
-      await fetch("/pair", {
+  try {
 
-        method:"POST",
+    const response = await fetch("/pair", {
 
-        headers:{
-          "Content-Type":"application/json"
-        },
+      method: "POST",
 
-        body:JSON.stringify({
-          number
-        })
+      headers: {
+        "Content-Type": "application/json"
+      },
+
+      body: JSON.stringify({
+        number
       })
+    })
 
+    // parse json safely
     const data = await response.json()
 
-    if(data.status){
+    console.log(data)
+
+    if (data.status) {
 
       document.getElementById("code")
-      .innerText = data.code
+        .innerText = data.code
 
     } else {
 
       document.getElementById("code")
-      .innerText = "FAILED"
+        .innerText =
+          data.message || "Failed"
     }
 
-  } catch(err){
+  } catch (err) {
+
+    console.log(err)
 
     document.getElementById("code")
-    .innerText = "ERROR"
+      .innerText = err.message
   }
 }
 
 </script>
-
 </body>
 </html>
