@@ -286,30 +286,42 @@ if (!number) {
 
   return res.json({
     status: false,
-    message: "Number required"
+    message: "Phone number required"
   })
 }
 
-// remove spaces/symbols
-number =
-  number.replace(/[^0-9]/g, "")
+// clean number
+number = number.replace(/[^0-9]/g, "")
 
-// generate real pair code
+// make sure socket exists
+if (!sock) {
+
+  return res.json({
+    status: false,
+    message: "Socket not initialized"
+  })
+}
+
+// small delay helps Baileys initialize
+await new Promise(resolve =>
+  setTimeout(resolve, 2000)
+)
+
 const code =
   await sock.requestPairingCode(number)
 
-res.json({
+return res.json({
   status: true,
   code
 })
 
 } catch (err) {
 
-console.log(err)
+console.log("PAIR ERROR:", err)
 
-res.json({
+return res.json({
   status: false,
-  message: "Failed to generate pair code"
+  message: err.message || "Pair code failed"
 })
 
 }
