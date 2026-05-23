@@ -259,11 +259,11 @@ try {
 
   else if (cmd === "owner") {
 
-    await sock.sendMessage(from, {
-      text:
-
-"👑 Owner: ${config.ownerName} 📞 ${config.ownerNumber}"
-})
+  await sock.sendMessage(from, {
+    text:
+`👑 Owner: ${config.ownerName}
+📞 ${config.ownerNumber}`
+  })
 }
 
 } catch (err) {
