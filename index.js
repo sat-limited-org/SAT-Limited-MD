@@ -340,7 +340,12 @@ return res.json({
 app.listen(PORT, () => {
 
 console.log(
-chalk.green("╔══════════════════════╗ 🌐 WEB PANEL ACTIVE PORT: ${PORT} ╚══════════════════════╝")
+  chalk.green(`
+╔══════════════════════╗
+🌐 WEB PANEL ACTIVE
+PORT: ${PORT}
+╚══════════════════════╝
+`)
 )
 })
 
