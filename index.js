@@ -69,7 +69,7 @@ browser: [
 ],
 
 // 🔗 PAIR CODE MODE
-printQRInTerminal: false
+printQRInTerminal: false,
 
 generateHighQualityLinkPreview: true,
 syncFullHistory: false
@@ -112,8 +112,13 @@ if (connection === "open") {
   console.clear()
 
   console.log(
+    chalk.cyan(`
 
-chalk.cyan("╔══════════════════════╗ 🤖 SAT LIMITED MD Connected Successfully ╚══════════════════════╝")
+╔══════════════════════╗
+🤖 SAT LIMITED MD
+Connected Successfully
+╚══════════════════════╝
+`)
 )
 }
 
@@ -293,7 +298,7 @@ if (!number) {
 // clean number
 number = number.replace(/[^0-9]/g, "")
 
-// make sure socket exists
+// check socket
 if (!sock) {
 
   return res.json({
@@ -302,11 +307,12 @@ if (!sock) {
   })
 }
 
-// small delay helps Baileys initialize
+// delay helps socket initialize
 await new Promise(resolve =>
   setTimeout(resolve, 2000)
 )
 
+// generate pair code
 const code =
   await sock.requestPairingCode(number)
 
