@@ -1,32 +1,31 @@
-// =======================
-// 🤖 SAT LIMITED MD
-// =======================
-
 const {
-  default: makeWASocket,
-  useMultiFileAuthState,
-  DisconnectReason,
-  fetchLatestBaileysVersion
+default: makeWASocket,
+useMultiFileAuthState,
+DisconnectReason,
+fetchLatestBaileysVersion
 } = require("@whiskeysockets/baileys")
-
-const P = require("pino")
-const qrcode = require("qrcode-terminal")
-const chalk = require("chalk")
-const fs = require("fs")
 
 const express = require("express")
 const path = require("path")
+const P = require("pino")
+const chalk = require("chalk")
+
+// =======================
+// ⚙️ EXPRESS SETUP
+// =======================
 
 const app = express()
+const PORT = process.env.PORT || 3000
 
+app.use(express.json())
 app.use(express.static(__dirname))
 
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "index.html"))
-})
+// =======================
+// 🌐 HOME PAGE
+// =======================
 
-app.listen(3000, () => {
-  console.log("Web panel running on port 3000")
+app.get("/", (req, res) => {
+res.sendFile(path.join(__dirname, "index.html"))
 })
 
 // =======================
@@ -34,11 +33,17 @@ app.listen(3000, () => {
 // =======================
 
 const config = {
-  botName: "SAT Limited MD",
-  ownerName: "SAT Limited",
-  prefix: ".",
-  ownerNumber: "260772697513"
+botName: "SAT Limited MD",
+ownerName: "SAT Limited",
+prefix: ".",
+ownerNumber: "260772697513"
 }
+
+// =======================
+// 🤖 GLOBAL SOCKET
+// =======================
+
+let sock
 
 // =======================
 // 🚀 START BOT
@@ -46,160 +51,169 @@ const config = {
 
 async function startBot() {
 
-  const { state, saveCreds } =
-    await useMultiFileAuthState("./session")
+const { state, saveCreds } =
+await useMultiFileAuthState("./session")
 
-  const { version } =
-    await fetchLatestBaileysVersion()
+const { version } =
+await fetchLatestBaileysVersion()
 
-  const sock = makeWASocket({
-    version,
-    auth: state,
-    logger: P({ level: "silent" }),
-    browser: ["SAT Limited MD", "Chrome", "1.0.0"]
-  })
+sock = makeWASocket({
+version,
+auth: state,
+logger: P({ level: "silent" }),
+
+browser: [
+  "SAT Limited MD",
+  "Chrome",
+  "1.0.0"
+],
+
+// 🔗 PAIR CODE MODE
+printQRInTerminal: false
+
+})
+
+// =======================
+// 💾 SAVE SESSION
+// =======================
+
+sock.ev.on("creds.update", saveCreds)
+
+// =======================
+// 🔗 WAITING FOR PAIRING
+// =======================
+
+if (!sock.authState.creds.registered) {
+
+console.log(
+  chalk.yellow(
+    "Waiting for Pair Code Request..."
+  )
+)
+
+}
+
+// =======================
+// 🔌 CONNECTION UPDATE
+// =======================
+
+sock.ev.on("connection.update", async ({
+connection,
+lastDisconnect
+}) => {
+
+// ===== CONNECTED =====
+
+if (connection === "open") {
+
+  console.clear()
+
+  console.log(
+
+chalk.cyan("╔══════════════════════╗ 🤖 SAT LIMITED MD Connected Successfully ╚══════════════════════╝")
+)
+}
+
+// ===== DISCONNECTED =====
+
+if (connection === "close") {
+
+  const reason =
+    lastDisconnect?.error?.output?.statusCode
+
+  console.log(
+    chalk.red("Connection closed...")
+  )
+
+  // reconnect unless logged out
+  if (
+    reason !== DisconnectReason.loggedOut
+  ) {
+
+    startBot()
+
+  } else {
+
+    console.log(
+      chalk.red("Logged out.")
+    )
+  }
+}
+
+})
+
+// =======================
+// 💬 MESSAGE HANDLER
+// =======================
+
+sock.ev.on("messages.upsert", async ({
+messages
+}) => {
+
+try {
+
+  const msg = messages[0]
+
+  if (!msg.message) return
+  if (msg.key.fromMe) return
 
   // =======================
-  // 💾 SAVE SESSION
+  // 📝 GET MESSAGE TEXT
   // =======================
 
-  sock.ev.on("creds.update", saveCreds)
+  const text =
+    msg.message.conversation ||
+    msg.message.extendedTextMessage?.text ||
+    msg.message.imageMessage?.caption ||
+    msg.message.videoMessage?.caption ||
+    ""
+
+  if (!text.startsWith(config.prefix))
+    return
 
   // =======================
-  // 🔌 CONNECTION UPDATE
+  // 📌 COMMANDS
   // =======================
 
-  sock.ev.on("connection.update", async ({
-    connection,
-    lastDisconnect,
-    qr
-  }) => {
+  const args =
+    text.slice(config.prefix.length)
+    .trim()
+    .split(/ +/)
 
-    // ===== QR CODE =====
+  const cmd =
+    args.shift().toLowerCase()
 
-    if (qr) {
-      console.clear()
-      qrcode.generate(qr, { small: true })
+  const from = msg.key.remoteJid
 
-      console.log(
-        chalk.green(
-          "\nScan the QR code above\n"
-        )
-      )
-    }
+  console.log(
+    chalk.yellow(`CMD: ${cmd}`)
+  )
 
-    // ===== CONNECTED =====
+  // =======================
+  // 🏓 PING
+  // =======================
 
-    if (connection === "open") {
+  if (cmd === "ping") {
 
-      console.clear()
+    await sock.sendMessage(from, {
+      text: "🏓 Pong!"
+    })
+  }
 
-      console.log(
-        chalk.cyan(`
+  // =======================
+  // 📜 MENU
+  // =======================
+
+  else if (
+    cmd === "menu" ||
+    cmd === "help"
+  ) {
+
+    const menu = `
+
 ╔══════════════════════╗
-   🤖 SAT LIMITED MD
-   Connected Successfully
+🤖 SAT LIMITED MD
 ╚══════════════════════╝
-`)
-      )
-    }
-
-    // ===== DISCONNECTED =====
-
-    if (connection === "close") {
-
-      const reason =
-        lastDisconnect?.error?.output?.statusCode
-
-      console.log(
-        chalk.red("Connection closed...")
-      )
-
-      // reconnect unless logged out
-      if (reason !== DisconnectReason.loggedOut) {
-        startBot()
-      } else {
-        console.log(
-          chalk.red("Logged out.")
-        )
-      }
-    }
-  })
-
-  // =======================
-  // 💬 MESSAGE HANDLER
-  // =======================
-
-  sock.ev.on("messages.upsert", async ({
-    messages
-  }) => {
-
-    try {
-
-      const msg = messages[0]
-
-      if (!msg.message) return
-      if (msg.key.fromMe) return
-
-      // =======================
-      // 📝 GET MESSAGE TEXT
-      // =======================
-
-      const text =
-        msg.message.conversation ||
-        msg.message.extendedTextMessage?.text ||
-        msg.message.imageMessage?.caption ||
-        msg.message.videoMessage?.caption ||
-        ""
-
-      if (!text.startsWith(config.prefix)) return
-
-      // =======================
-      // 📌 COMMAND INFO
-      // =======================
-
-      const args =
-        text.slice(config.prefix.length)
-        .trim()
-        .split(/ +/)
-
-      const cmd =
-        args.shift().toLowerCase()
-
-      const from = msg.key.remoteJid
-      const sender = msg.key.participant || from
-
-      console.log(
-        chalk.yellow(`CMD: ${cmd}`)
-      )
-
-      // =======================
-      // 🏓 PING
-      // =======================
-
-      if (cmd === "ping") {
-
-        await sock.sendMessage(from, {
-          text: "🏓 Pong!"
-        })
-
-      }
-
-      // =======================
-      // 📜 MENU
-      // =======================
-
-      else if (
-        cmd === "menu" ||
-        cmd === "help"
-      ) {
-
-        const menu = `
-╔══════════════════════╗
-   🤖 *SAT LIMITED MD*
-╚══════════════════════╝
-
-👋 Hello!
 
 🧠 AI:
 ➤ .ai
@@ -222,39 +236,95 @@ async function startBot() {
 
 ⚙️ General:
 ➤ .ping
+➤ .owner
 ➤ .menu
 `
 
-        await sock.sendMessage(from, {
-          text: menu
-        })
-      }
+    await sock.sendMessage(from, {
+      text: menu
+    })
+  }
 
-      // =======================
-      // OWNER
-      // =======================
+  // =======================
+  // 👑 OWNER
+  // =======================
 
-      else if (cmd === "owner") {
+  else if (cmd === "owner") {
 
-        await sock.sendMessage(from, {
-          text:
-`👑 Owner: ${config.ownerName}
-📞 Number: ${config.ownerNumber}`
-        })
-      }
+    await sock.sendMessage(from, {
+      text:
 
-    } catch (err) {
+"👑 Owner: ${config.ownerName} 📞 ${config.ownerNumber}"
+})
+}
 
-      console.log(
-        chalk.red("Error:"),
-        err
-      )
-    }
-  })
+} catch (err) {
+
+  console.log(
+    chalk.red("ERROR:"),
+    err
+  )
+}
+
+})
 }
 
 // =======================
-// ▶️ START
+// 🔗 PAIR CODE API
+// =======================
+
+app.post("/pair", async (req, res) => {
+
+try {
+
+let number = req.body.number
+
+if (!number) {
+
+  return res.json({
+    status: false,
+    message: "Number required"
+  })
+}
+
+// remove spaces/symbols
+number =
+  number.replace(/[^0-9]/g, "")
+
+// generate real pair code
+const code =
+  await sock.requestPairingCode(number)
+
+res.json({
+  status: true,
+  code
+})
+
+} catch (err) {
+
+console.log(err)
+
+res.json({
+  status: false,
+  message: "Failed to generate pair code"
+})
+
+}
+})
+
+// =======================
+// 🚀 START SERVER
+// =======================
+
+app.listen(PORT, () => {
+
+console.log(
+chalk.green("╔══════════════════════╗ 🌐 WEB PANEL ACTIVE PORT: ${PORT} ╚══════════════════════╝")
+)
+})
+
+// =======================
+// ▶️ START BOT
 // =======================
 
 startBot()
