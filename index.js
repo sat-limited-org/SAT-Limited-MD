@@ -71,6 +71,9 @@ browser: [
 // 🔗 PAIR CODE MODE
 printQRInTerminal: false
 
+generateHighQualityLinkPreview: true,
+syncFullHistory: false
+
 })
 
 // =======================
