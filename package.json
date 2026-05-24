@@ -1,18 +1,16 @@
 {
-"name": "sat-limited-md",
-"version": "1.0.0",
-"description": "SAT Limited MD WhatsApp Bot",
-"main": "index.js",
-
-"scripts": {
-"start": "node index.js"
-},
-
-"dependencies": {
-"@whiskeysockets/baileys": "^6.7.18",
-"chalk": "^4.1.2",
-"express": "^4.19.2",
-"pino": "^8.21.0",
-"qrcode-terminal": "^0.12.0"
-}
+  "name": "sat-limited-md",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^4.18.2",
+    "@whiskeysockets/baileys": "^6.7.9",
+    "qrcode": "^1.5.3",
+    "pino": "^8.17.0",
+    "chalk": "^4.1.2"
+  },
+  "engines": {
+    "node": "18.x"
+  }
 }
