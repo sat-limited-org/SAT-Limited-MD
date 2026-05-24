@@ -1,7 +1,6 @@
 {
   "name": "sat-limited-md",
   "version": "1.0.0",
-  "description": "SAT Limited MD WhatsApp Bot",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
@@ -15,6 +14,6 @@
     "qrcode": "^1.5.3"
   },
   "engines": {
-    "node": "18.x"
+    "node": "24.x"
   }
 }
