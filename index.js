@@ -10,41 +10,53 @@ const path = require("path")
 const fs = require("fs")
 const P = require("pino")
 const chalk = require("chalk")
+const QRCode = require("qrcode")
 
-// =======================
-// ⚙️ EXPRESS SETUP
-// =======================
 const app = express()
 app.use(express.json())
 app.use(express.static(__dirname))
 
-// =======================
-// 🌐 HOME PAGE
-// =======================
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"))
 })
 
-// =======================
-// ⚙️ CONFIG
-// =======================
-const config = {
-  botName: "SAT Limited MD",
-  ownerName: "SAT Limited",
-  prefix: ".",
-  ownerNumber: "260772697513"
+const SESSION_DIR = "/tmp/session"
+let sock = null
+const activePairing = new Map()
+const commands = new Map()
+
+// Recursive command loader
+function loadCommands(dir) {
+  if (!fs.existsSync(dir)) return
+  
+  const files = fs.readdirSync(dir, { withFileTypes: true })
+
+  for (const file of files) {
+    const fullPath = path.join(dir, file.name)
+
+    if (file.isDirectory()) {
+      loadCommands(fullPath)
+    } else if (file.name.endsWith(".js")) {
+      try {
+        delete require.cache[require.resolve(fullPath)]
+        const command = require(fullPath)
+
+        if (command.name && typeof command.execute === "function") {
+          commands.set(command.name, command)
+          console.log(chalk.green(`[CMD] Loaded: ${command.name}`))
+        }
+      } catch (err) {
+        console.log(chalk.red(`[CMD] Failed to load ${file.name}:`), err.message)
+      }
+    }
+  }
 }
 
-// =======================
-// 🤖 GLOBAL SOCKET
-// =======================
-let sock
-const SESSION_DIR = "/tmp/session"
-const activePairing = new Map()
+// Load all commands from ./commands folder
+const commandsPath = path.join(__dirname, "commands")
+loadCommands(commandsPath)
+console.log(chalk.cyan(`Total commands loaded: ${commands.size}`))
 
-// =======================
-// 🚀 START BOT
-// =======================
 async function getSocket() {
   if (sock && sock.ws?.readyState === 1) return sock
 
@@ -61,7 +73,6 @@ async function getSocket() {
     logger: P({ level: "silent" }),
     browser: ["SAT Limited MD", "Chrome", "1.0.0"],
     printQRInTerminal: false,
-    generateHighQualityLinkPreview: true,
     syncFullHistory: false,
     markOnlineOnConnect: false
   })
@@ -81,21 +92,44 @@ async function getSocket() {
     }
   })
 
-  await new Promise(r => setTimeout(r, 2000))
+  // Message handler
+  sock.ev.on("messages.upsert", async ({ messages }) => {
+    try {
+      const msg = messages[0]
+      if (!msg.message || msg.key.fromMe) return
+
+      const text =
+        msg.message.conversation ||
+        msg.message.extendedTextMessage?.text ||
+        msg.message.imageMessage?.caption ||
+        msg.message.videoMessage?.caption ||
+        ""
+
+      if (!text.startsWith(".")) return
+
+      const args = text.slice(1).trim().split(/ +/)
+      const cmd = args.shift().toLowerCase()
+      const from = msg.key.remoteJid
+
+      const command = commands.get(cmd)
+      if (!command) return
+
+      await command.execute(sock, msg, args, from)
+      console.log(chalk.yellow(`CMD: ${cmd}`))
+      
+    } catch (err) {
+      console.log(chalk.red("Handler Error:"), err)
+    }
+  })
+
+  await new Promise(r => setTimeout(r, 1500))
   return sock
 }
 
-// =======================
-// 🔗 PAIR CODE API
-// =======================
+// PAIR CODE ENDPOINT
 app.post("/pair", async (req, res) => {
   try {
-    let number = req.body.number
-    if (!number) {
-      return res.json({ status: false, message: "Phone number required" })
-    }
-
-    number = number.replace(/[^0-9]/g, "")
+    let number = req.body.number?.replace(/[^0-9]/g, "")
     if (!/^[0-9]{10,15}$/.test(number)) {
       return res.json({ status: false, message: "Invalid phone number" })
     }
@@ -107,15 +141,13 @@ app.post("/pair", async (req, res) => {
     activePairing.set(number, true)
     const s = await getSocket()
 
-    // 12s timeout to avoid Vercel kill
     const code = await Promise.race([
       s.requestPairingCode(number),
       new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout after 12s")), 12000))
     ])
 
     activePairing.delete(number)
-
-    // Close socket after 30s to save memory
+    
     setTimeout(() => {
       if (sock?.ws) {
         try { sock.ws.close() } catch {}
@@ -132,23 +164,44 @@ app.post("/pair", async (req, res) => {
   }
 })
 
-// =======================
-// 💓 KEEP ALIVE
-// =======================
+// QR CODE ENDPOINT
+app.get("/qr", async (req, res) => {
+  try {
+    const s = await getSocket()
+    
+    if (s.user) {
+      return res.json({ status: "connected" })
+    }
+
+    let sent = false
+    s.ev.on("connection.update", async (update) => {
+      if (update.qr && !sent) {
+        sent = true
+        const qrData = await QRCode.toDataURL(update.qr)
+        res.json({ qr: qrData })
+      }
+    })
+
+    setTimeout(() => {
+      if (!res.headersSent) {
+        res.status(408).json({ error: "QR timeout. Refresh and try again." })
+      }
+    }, 8000)
+
+  } catch (err) {
+    console.log("QR ERROR:", err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 app.get("/ping", (_, res) => res.send("pong"))
 app.get("/status", (_, res) => res.json({ 
   status: sock?.user ? "connected" : "offline" 
 }))
 
-// =======================
-// 🚀 EXPORT FOR VERCEL
-// =======================
 module.exports = app
 
-// Local testing only
 if (require.main === module) {
   const PORT = process.env.PORT || 3000
-  app.listen(PORT, () => {
-    console.log(chalk.green(`Server running on ${PORT}`))
-  })
+  app.listen(PORT, () => console.log(`Server running on ${PORT}`))
 }
