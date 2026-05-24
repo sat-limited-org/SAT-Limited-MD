@@ -7,350 +7,148 @@ fetchLatestBaileysVersion
 
 const express = require("express")
 const path = require("path")
+const fs = require("fs")
 const P = require("pino")
 const chalk = require("chalk")
 
 // =======================
 // ⚙️ EXPRESS SETUP
 // =======================
-
 const app = express()
-const PORT = process.env.PORT || 3000
-
 app.use(express.json())
 app.use(express.static(__dirname))
 
 // =======================
 // 🌐 HOME PAGE
 // =======================
-
 app.get("/", (req, res) => {
-res.sendFile(path.join(__dirname, "index.html"))
+  res.sendFile(path.join(__dirname, "index.html"))
 })
 
 // =======================
 // ⚙️ CONFIG
 // =======================
-
 const config = {
-botName: "SAT Limited MD",
-ownerName: "SAT Limited",
-prefix: ".",
-ownerNumber: "260772697513"
+  botName: "SAT Limited MD",
+  ownerName: "SAT Limited",
+  prefix: ".",
+  ownerNumber: "260772697513"
 }
 
 // =======================
 // 🤖 GLOBAL SOCKET
 // =======================
-
 let sock
+const SESSION_DIR = "/tmp/session"
+const activePairing = new Map()
 
 // =======================
 // 🚀 START BOT
 // =======================
+async function getSocket() {
+  if (sock && sock.ws?.readyState === 1) return sock
 
-async function startBot() {
-
-const { state, saveCreds } =
-await useMultiFileAuthState("./session")
-
-const { version } =
-await fetchLatestBaileysVersion()
-
-sock = makeWASocket({
-version,
-auth: state,
-logger: P({ level: "silent" }),
-
-browser: [
-  "SAT Limited MD",
-  "Chrome",
-  "1.0.0"
-],
-
-// 🔗 PAIR CODE MODE
-printQRInTerminal: false,
-
-generateHighQualityLinkPreview: true,
-syncFullHistory: false
-
-})
-
-// =======================
-// 💾 SAVE SESSION
-// =======================
-
-sock.ev.on("creds.update", saveCreds)
-
-// =======================
-// 🔗 WAITING FOR PAIRING
-// =======================
-
-if (!sock.authState.creds.registered) {
-
-console.log(
-  chalk.yellow(
-    "Waiting for Pair Code Request..."
-  )
-)
-
-}
-
-// =======================
-// 🔌 CONNECTION UPDATE
-// =======================
-
-sock.ev.on("connection.update", async ({
-connection,
-lastDisconnect
-}) => {
-
-// ===== CONNECTED =====
-
-if (connection === "open") {
-
-  console.clear()
-
-  console.log(
-    chalk.cyan(`
-
-╔══════════════════════╗
-🤖 SAT LIMITED MD
-Connected Successfully
-╚══════════════════════╝
-`)
-)
-}
-
-// ===== DISCONNECTED =====
-
-if (connection === "close") {
-
-  const reason =
-    lastDisconnect?.error?.output?.statusCode
-
-  console.log(
-    chalk.red("Connection closed...")
-  )
-
-  // reconnect unless logged out
-  if (
-    reason !== DisconnectReason.loggedOut
-  ) {
-
-    startBot()
-
-  } else {
-
-    console.log(
-      chalk.red("Logged out.")
-    )
-  }
-}
-
-})
-
-// =======================
-// 💬 MESSAGE HANDLER
-// =======================
-
-sock.ev.on("messages.upsert", async ({
-messages
-}) => {
-
-try {
-
-  const msg = messages[0]
-
-  if (!msg.message) return
-  if (msg.key.fromMe) return
-
-  // =======================
-  // 📝 GET MESSAGE TEXT
-  // =======================
-
-  const text =
-    msg.message.conversation ||
-    msg.message.extendedTextMessage?.text ||
-    msg.message.imageMessage?.caption ||
-    msg.message.videoMessage?.caption ||
-    ""
-
-  if (!text.startsWith(config.prefix))
-    return
-
-  // =======================
-  // 📌 COMMANDS
-  // =======================
-
-  const args =
-    text.slice(config.prefix.length)
-    .trim()
-    .split(/ +/)
-
-  const cmd =
-    args.shift().toLowerCase()
-
-  const from = msg.key.remoteJid
-
-  console.log(
-    chalk.yellow(`CMD: ${cmd}`)
-  )
-
-  // =======================
-  // 🏓 PING
-  // =======================
-
-  if (cmd === "ping") {
-
-    await sock.sendMessage(from, {
-      text: "🏓 Pong!"
-    })
+  if (!fs.existsSync(SESSION_DIR)) {
+    fs.mkdirSync(SESSION_DIR, { recursive: true })
   }
 
-  // =======================
-  // 📜 MENU
-  // =======================
+  const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR)
+  const { version } = await fetchLatestBaileysVersion()
 
-  else if (
-    cmd === "menu" ||
-    cmd === "help"
-  ) {
-
-    const menu = `
-
-╔══════════════════════╗
-🤖 SAT LIMITED MD
-╚══════════════════════╝
-
-🧠 AI:
-➤ .ai
-➤ .gpt
-➤ .gemini
-
-📥 Download:
-➤ .play
-➤ .song
-➤ .video
-
-🎨 Images:
-➤ .imagine
-➤ .sticker
-
-👮 Admin:
-➤ .ban
-➤ .kick
-➤ .mute
-
-⚙️ General:
-➤ .ping
-➤ .owner
-➤ .menu
-`
-
-    await sock.sendMessage(from, {
-      text: menu
-    })
-  }
-
-  // =======================
-  // 👑 OWNER
-  // =======================
-
-  else if (cmd === "owner") {
-
-  await sock.sendMessage(from, {
-    text:
-`👑 Owner: ${config.ownerName}
-📞 ${config.ownerNumber}`
+  sock = makeWASocket({
+    version,
+    auth: state,
+    logger: P({ level: "silent" }),
+    browser: ["SAT Limited MD", "Chrome", "1.0.0"],
+    printQRInTerminal: false,
+    generateHighQualityLinkPreview: true,
+    syncFullHistory: false,
+    markOnlineOnConnect: false
   })
-}
 
-} catch (err) {
+  sock.ev.on("creds.update", saveCreds)
+  
+  sock.ev.on("connection.update", ({ connection, lastDisconnect }) => {
+    if (connection === "open") {
+      console.log(chalk.cyan("✅ WhatsApp Connected"))
+    }
+    if (connection === "close") {
+      const reason = lastDisconnect?.error?.output?.statusCode
+      console.log(chalk.red("Connection closed:", reason))
+      if (reason !== DisconnectReason.loggedOut) {
+        sock = null
+      }
+    }
+  })
 
-  console.log(
-    chalk.red("ERROR:"),
-    err
-  )
-}
-
-})
+  await new Promise(r => setTimeout(r, 2000))
+  return sock
 }
 
 // =======================
 // 🔗 PAIR CODE API
 // =======================
-
 app.post("/pair", async (req, res) => {
+  try {
+    let number = req.body.number
+    if (!number) {
+      return res.json({ status: false, message: "Phone number required" })
+    }
 
-try {
+    number = number.replace(/[^0-9]/g, "")
+    if (!/^[0-9]{10,15}$/.test(number)) {
+      return res.json({ status: false, message: "Invalid phone number" })
+    }
 
-let number = req.body.number
+    if (activePairing.has(number)) {
+      return res.json({ status: false, message: "Pairing already in progress" })
+    }
 
-if (!number) {
+    activePairing.set(number, true)
+    const s = await getSocket()
 
-  return res.json({
-    status: false,
-    message: "Phone number required"
+    // 12s timeout to avoid Vercel kill
+    const code = await Promise.race([
+      s.requestPairingCode(number),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout after 12s")), 12000))
+    ])
+
+    activePairing.delete(number)
+
+    // Close socket after 30s to save memory
+    setTimeout(() => {
+      if (sock?.ws) {
+        try { sock.ws.close() } catch {}
+        sock = null
+      }
+    }, 30000)
+
+    return res.json({ status: true, code })
+
+  } catch (err) {
+    activePairing.delete(req.body.number?.replace(/[^0-9]/g, ""))
+    console.log("PAIR ERROR:", err)
+    return res.json({ status: false, message: err.message || "Pair code failed" })
+  }
+})
+
+// =======================
+// 💓 KEEP ALIVE
+// =======================
+app.get("/ping", (_, res) => res.send("pong"))
+app.get("/status", (_, res) => res.json({ 
+  status: sock?.user ? "connected" : "offline" 
+}))
+
+// =======================
+// 🚀 EXPORT FOR VERCEL
+// =======================
+module.exports = app
+
+// Local testing only
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000
+  app.listen(PORT, () => {
+    console.log(chalk.green(`Server running on ${PORT}`))
   })
 }
-
-// clean number
-number = number.replace(/[^0-9]/g, "")
-
-// check socket
-if (!sock) {
-
-  return res.json({
-    status: false,
-    message: "Socket not initialized"
-  })
-}
-
-// delay helps socket initialize
-await new Promise(resolve =>
-  setTimeout(resolve, 2000)
-)
-
-// generate pair code
-const code =
-  await sock.requestPairingCode(number)
-
-return res.json({
-  status: true,
-  code
-})
-
-} catch (err) {
-
-console.log("PAIR ERROR:", err)
-
-return res.json({
-  status: false,
-  message: err.message || "Pair code failed"
-})
-
-}
-})
-
-// =======================
-// 🚀 START SERVER
-// =======================
-
-app.listen(PORT, () => {
-
-console.log(
-  chalk.green(`
-╔══════════════════════╗
-🌐 WEB PANEL ACTIVE
-PORT: ${PORT}
-╚══════════════════════╝
-`)
-)
-})
-
-// =======================
-// ▶️ START BOT
-// =======================
-
-startBot()
