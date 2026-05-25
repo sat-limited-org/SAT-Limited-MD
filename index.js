@@ -11,6 +11,7 @@ const fs = require("fs")
 const P = require("pino")
 const chalk = require("chalk")
 const QRCode = require("qrcode")
+const NodeCache = require("node-cache")
 
 const app = express()
 
@@ -29,23 +30,35 @@ let socketConnecting = false
 const activePairing = new Map()
 const commands = new Map()
 
+const msgRetryCounterCache = new NodeCache()
+
 // =======================
 // LOAD COMMANDS
 // =======================
 
 function loadCommands(dir) {
+
   if (!fs.existsSync(dir)) return
 
-  const files = fs.readdirSync(dir, { withFileTypes: true })
+  const files = fs.readdirSync(dir, {
+    withFileTypes: true
+  })
 
   for (const file of files) {
+
     const fullPath = path.join(dir, file.name)
 
     if (file.isDirectory()) {
+
       loadCommands(fullPath)
+
     } else if (file.name.endsWith(".js")) {
+
       try {
-        delete require.cache[require.resolve(fullPath)]
+
+        delete require.cache[
+          require.resolve(fullPath)
+        ]
 
         const command = require(fullPath)
 
@@ -54,15 +67,22 @@ function loadCommands(dir) {
           command.name &&
           typeof command.execute === "function"
         ) {
+
           commands.set(command.name, command)
 
           console.log(
-            chalk.green(`[CMD] Loaded: ${command.name}`)
+            chalk.green(
+              `[CMD] Loaded: ${command.name}`
+            )
           )
         }
+
       } catch (err) {
+
         console.log(
-          chalk.red(`[CMD] Failed: ${file.name}`),
+          chalk.red(
+            `[CMD] Failed: ${file.name}`
+          ),
           err.message
         )
       }
@@ -70,12 +90,15 @@ function loadCommands(dir) {
   }
 }
 
-const commandsPath = path.join(__dirname, "commands")
+const commandsPath =
+  path.join(__dirname, "commands")
 
 loadCommands(commandsPath)
 
 console.log(
-  chalk.cyan(`Total commands loaded: ${commands.size}`)
+  chalk.cyan(
+    `Total commands loaded: ${commands.size}`
+  )
 )
 
 // =======================
@@ -83,17 +106,22 @@ console.log(
 // =======================
 
 async function getSocket() {
+
   if (sock?.ws?.readyState === 1) {
     return sock
   }
 
   if (socketConnecting) {
+
     await new Promise(resolve => {
+
       const check = setInterval(() => {
-        if (sock?.ws?.readyState === 1) {
+
+        if (sock) {
           clearInterval(check)
           resolve()
         }
+
       }, 500)
     })
 
@@ -103,119 +131,157 @@ async function getSocket() {
   socketConnecting = true
 
   try {
+
     if (!fs.existsSync(SESSION_DIR)) {
-      fs.mkdirSync(SESSION_DIR, { recursive: true })
+
+      fs.mkdirSync(
+        SESSION_DIR,
+        { recursive: true }
+      )
     }
 
-    const { state, saveCreds } =
-      await useMultiFileAuthState(SESSION_DIR)
+    const {
+      state,
+      saveCreds
+    } = await useMultiFileAuthState(
+      SESSION_DIR
+    )
 
     const { version } =
       await fetchLatestBaileysVersion()
 
     sock = makeWASocket({
+
       version,
       auth: state,
-      logger: P({ level: "silent" }),
-      browser: ["SAT Limited MD", "Chrome", "1.0.0"],
+
+      logger: P({
+        level: "silent"
+      }),
+
+      browser: [
+        "SAT Limited MD",
+        "Chrome",
+        "1.0.0"
+      ],
+
       printQRInTerminal: false,
       syncFullHistory: false,
-      markOnlineOnConnect: false
+      markOnlineOnConnect: false,
+
+      connectTimeoutMs: 60000,
+      keepAliveIntervalMs: 10000,
+      defaultQueryTimeoutMs: 0,
+
+      msgRetryCounterCache
     })
 
-    sock.ev.on("creds.update", saveCreds)
+    sock.ev.on(
+      "creds.update",
+      saveCreds
+    )
 
-    sock.ev.on("connection.update", ({ connection, lastDisconnect }) => {
+    sock.ev.on(
+      "connection.update",
+      ({ connection, lastDisconnect }) => {
 
-      if (connection === "open") {
-        console.log(
-          chalk.green("✅ WhatsApp Connected")
-        )
-      }
+        if (connection === "open") {
 
-      if (connection === "close") {
-        const reason =
-          lastDisconnect?.error?.output?.statusCode
+          console.log(
+            chalk.green(
+              "✅ WhatsApp Connected"
+            )
+          )
+        }
 
-        console.log(
-          chalk.red("❌ Connection closed:", reason)
-        )
+        if (connection === "close") {
 
-        if (reason !== DisconnectReason.loggedOut) {
+          const reason =
+            lastDisconnect?.error
+              ?.output?.statusCode
+
+          console.log(
+            chalk.red(
+              `❌ Connection closed: ${reason}`
+            )
+          )
+
           sock = null
         }
       }
-    })
+    )
 
     // =======================
     // MESSAGE HANDLER
     // =======================
 
-    sock.ev.on("messages.upsert", async ({ messages }) => {
-      try {
-        const msg = messages[0]
+    sock.ev.on(
+      "messages.upsert",
+      async ({ messages }) => {
 
-        if (!msg.message || msg.key.fromMe) return
+        try {
 
-        const text =
-          msg.message.conversation ||
-          msg.message.extendedTextMessage?.text ||
-          msg.message.imageMessage?.caption ||
-          msg.message.videoMessage?.caption ||
-          ""
+          const msg = messages[0]
 
-        if (!text.startsWith(".")) return
+          if (
+            !msg.message ||
+            msg.key.fromMe
+          ) return
 
-        const args =
-          text.slice(1).trim().split(/ +/)
+          const text =
+            msg.message.conversation ||
+            msg.message.extendedTextMessage?.text ||
+            msg.message.imageMessage?.caption ||
+            msg.message.videoMessage?.caption ||
+            ""
 
-        const cmd = args.shift()?.toLowerCase()
+          if (!text.startsWith(".")) return
 
-        const from = msg.key.remoteJid
+          const args =
+            text.slice(1)
+              .trim()
+              .split(/ +/)
 
-        const command = commands.get(cmd)
+          const cmd =
+            args.shift()?.toLowerCase()
 
-        if (!command) return
+          const from =
+            msg.key.remoteJid
 
-        await command.execute(
-          sock,
-          msg,
-          args,
-          from
-        )
+          const command =
+            commands.get(cmd)
 
-        console.log(
-          chalk.yellow(`CMD: ${cmd}`)
-        )
+          if (!command) return
 
-      } catch (err) {
-        console.log(
-          chalk.red("Handler Error:"),
-          err
-        )
-      }
-    })
+          await command.execute(
+            sock,
+            msg,
+            args,
+            from
+          )
 
-    // WAIT UNTIL READY
+          console.log(
+            chalk.yellow(
+              `CMD: ${cmd}`
+            )
+          )
 
-    await new Promise((resolve, reject) => {
+        } catch (err) {
 
-      const timeout = setTimeout(() => {
-        reject(new Error("Socket connection timeout"))
-      }, 15000)
-
-      sock.ev.on("connection.update", ({ connection }) => {
-
-        if (connection === "open") {
-          clearTimeout(timeout)
-          resolve()
+          console.log(
+            chalk.red(
+              "Handler Error:"
+            ),
+            err
+          )
         }
-      })
-    })
+      }
+    )
 
     return sock
 
   } finally {
+
     socketConnecting = false
   }
 }
@@ -233,6 +299,7 @@ app.post("/pair", async (req, res) => {
         ?.replace(/[^0-9]/g, "")
 
     if (!/^[0-9]{10,15}$/.test(number)) {
+
       return res.json({
         status: false,
         message: "Invalid phone number"
@@ -240,9 +307,11 @@ app.post("/pair", async (req, res) => {
     }
 
     if (activePairing.has(number)) {
+
       return res.json({
         status: false,
-        message: "Pairing already in progress"
+        message:
+          "Pairing already in progress"
       })
     }
 
@@ -250,26 +319,33 @@ app.post("/pair", async (req, res) => {
 
     const s = await getSocket()
 
-    await new Promise(r => setTimeout(r, 3000))
+    await new Promise(r =>
+      setTimeout(r, 5000)
+    )
 
-    const code = await Promise.race([
+    const code =
+      await Promise.race([
 
-      s.requestPairingCode(number),
+        s.requestPairingCode(number),
 
-      new Promise((_, reject) =>
-        setTimeout(() =>
-          reject(
-            new Error("Pairing timeout")
-          ),
-        15000)
-      )
-
-    ])
+        new Promise((_, reject) =>
+          setTimeout(() =>
+            reject(
+              new Error(
+                "Pairing timeout"
+              )
+            ),
+            20000
+          )
+        )
+      ])
 
     activePairing.delete(number)
 
     setTimeout(() => {
+
       try {
+
         if (sock?.ws) {
           sock.ws.close()
         }
@@ -277,6 +353,7 @@ app.post("/pair", async (req, res) => {
         sock = null
 
       } catch {}
+
     }, 30000)
 
     return res.json({
@@ -292,12 +369,15 @@ app.post("/pair", async (req, res) => {
     )
 
     activePairing.delete(
-      req.body.number?.replace(/[^0-9]/g, "")
+      req.body.number
+        ?.replace(/[^0-9]/g, "")
     )
 
     return res.json({
       status: false,
-      message: err.message || "Pair code failed"
+      message:
+        err.message ||
+        "Pair code failed"
     })
   }
 })
@@ -312,41 +392,50 @@ app.get("/qr", async (req, res) => {
 
     const s = await getSocket()
 
-    if (s.user) {
+    if (
+      s.authState?.creds?.registered
+    ) {
+
       return res.json({
         status: "connected"
       })
     }
 
-    const listener = async (update) => {
+    const listener =
+      async (update) => {
 
-      if (update.qr && !res.headersSent) {
+        if (
+          update.qr &&
+          !res.headersSent
+        ) {
 
-        try {
+          try {
 
-          const qrData =
-            await QRCode.toDataURL(update.qr)
+            const qrData =
+              await QRCode.toDataURL(
+                update.qr
+              )
 
-          res.json({
-            qr: qrData
-          })
-
-          s.ev.off(
-            "connection.update",
-            listener
-          )
-
-        } catch (e) {
-
-          if (!res.headersSent) {
-
-            res.status(500).json({
-              error: e.message
+            res.json({
+              qr: qrData
             })
+
+            s.ev.off(
+              "connection.update",
+              listener
+            )
+
+          } catch (e) {
+
+            if (!res.headersSent) {
+
+              res.status(500).json({
+                error: e.message
+              })
+            }
           }
         }
       }
-    }
 
     s.ev.on(
       "connection.update",
@@ -363,11 +452,12 @@ app.get("/qr", async (req, res) => {
       if (!res.headersSent) {
 
         res.status(408).json({
-          error: "QR generation timeout"
+          error:
+            "QR generation timeout"
         })
       }
 
-    }, 15000)
+    }, 20000)
 
   } catch (err) {
 
@@ -392,6 +482,7 @@ app.get("/qr", async (req, res) => {
 app.get("/status", (_, res) => {
 
   res.json({
+
     status: sock?.user
       ? "connected"
       : "offline"
