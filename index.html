@@ -21,13 +21,12 @@
     .btn{width:100%;padding:14px;background:#00ff99;color:black;border:none;border-radius:10px;font-size:16px;font-weight:bold;cursor:pointer;transition:0.3s;margin-bottom:10px;}
     .btn:disabled{background:#555;cursor:not-allowed;}
     .btn:hover:not(:disabled){background:white;transform:scale(1.03);}
-    .btn-secondary{background:#333;color:#00ff99;}
+    .btn-secondary{background:#333;color:#00ff99;opacity:0.6;}
     .pair-code{margin-top:20px;padding:15px;background:#1a1a1a;border-radius:10px;text-align:center;display:none;}
     .pair-code h2{color:#00ff99;margin-bottom:10px;}
     .code{font-size:28px;font-weight:bold;letter-spacing:5px;color:white;word-break:break-word;}
     .error{color:#ff5555;margin-top:10px;font-size:14px;}
     .footer{margin-top:25px;text-align:center;color:#666;font-size:14px;}
-    #qrImg{width:220px;height:220px;border-radius:12px;margin:0 auto;display:block;}
   </style>
 </head>
 <body>
@@ -46,7 +45,7 @@
     </div>
 
     <button class="btn" id="pairBtn" onclick="generateCode()">Generate Pair Code</button>
-    <button class="btn btn-secondary" id="qrBtn" onclick="generateQR()">Use QR Code Instead</button>
+    <button class="btn btn-secondary" disabled title="QR doesn't work on Vercel">Use QR Code Instead</button>
 
     <div class="pair-code" id="pairBox">
       <h2>PAIR CODE</h2>
@@ -54,273 +53,78 @@
       <div class="error" id="error"></div>
     </div>
 
-    <div class="pair-code" id="qrBox">
-      <h2>SCAN QR CODE</h2>
-      <img id="qrImg">
-      <p style="font-size:13px;color:#aaa;margin-top:10px">WhatsApp → Linked Devices → Scan QR</p>
-    </div>
-
     <div class="footer"> © 2026 SAT Limited</div>
   </div>
 
 <script>
-
-const statusEl =
-  document.getElementById("status")
+const statusEl = document.getElementById("status")
 
 async function checkStatus() {
-
   try {
-
-    const res =
-      await fetch("/status")
-
-    const data =
-      await res.json()
-
+    const res = await fetch("/status")
+    const data = await res.json()
     if (data.status === "connected") {
-
       statusEl.innerText = "● ONLINE"
       statusEl.style.color = "#00ff99"
-
     } else {
-
       statusEl.innerText = "● OFFLINE"
       statusEl.style.color = "#ff5555"
     }
-
   } catch {
-
     statusEl.innerText = "● SERVER ERROR"
     statusEl.style.color = "#ffaa00"
   }
 }
 
-// =======================
 // PAIR CODE
-// =======================
-
 async function generateCode() {
-
-  const number =
-    document.getElementById("number")
-      .value
-      .trim()
-      .replace(/[^0-9]/g, "")
-
-  const btn =
-    document.getElementById("pairBtn")
-
-  const pairBox =
-    document.getElementById("pairBox")
-
-  const codeEl =
-    document.getElementById("code")
-
-  const errorEl =
-    document.getElementById("error")
+  const number = document.getElementById("number").value.trim().replace(/[^0-9]/g, "")
+  const btn = document.getElementById("pairBtn")
+  const pairBox = document.getElementById("pairBox")
+  const codeEl = document.getElementById("code")
+  const errorEl = document.getElementById("error")
 
   if (!number || number.length < 10) {
-
     alert("Enter a valid WhatsApp number")
     return
   }
 
   btn.disabled = true
   btn.innerText = "Generating..."
-
   pairBox.style.display = "block"
-
-  document.getElementById("qrBox")
-    .style.display = "none"
-
   codeEl.innerText = "PLEASE WAIT..."
   errorEl.innerText = ""
 
   try {
-
-    const response =
-      await fetch("/pair", {
-
-        method: "POST",
-
-        headers: {
-          "Content-Type": "application/json"
-        },
-
-        body: JSON.stringify({
-          number
-        })
-      })
-
-    const data =
-      await response.json()
+    // FIX: Use GET with query param, not POST
+    const response = await fetch(`/pair?number=${number}`)
+    const data = await response.json()
 
     if (data.status) {
-
-      codeEl.innerText =
-        data.code
-
-      errorEl.innerText =
-        "WhatsApp → Linked Devices → Link with phone number"
-
+      codeEl.innerText = data.code.match(/.{1,4}/g).join("-")
+      errorEl.innerText = "WhatsApp → Linked Devices → Link with phone number"
     } else {
-
       codeEl.innerText = "FAILED"
-
-      errorEl.innerText =
-        data.message || "Unknown error"
+      errorEl.innerText = data.message || "Unknown error"
     }
-
   } catch (err) {
-
     console.log(err)
-
     codeEl.innerText = "ERROR"
-
-    errorEl.innerText =
-      "Failed to generate pair code"
-
+    errorEl.innerText = "Server error. Check Vercel logs."
   } finally {
-
     btn.disabled = false
-
-    btn.innerText =
-      "Generate Pair Code"
+    btn.innerText = "Generate Pair Code"
   }
 }
 
-// =======================
-// QR CODE
-// =======================
-
-async function generateQR() {
-
-  const qrBox =
-    document.getElementById("qrBox")
-
-  const qrImg =
-    document.getElementById("qrImg")
-
-  const qrBtn =
-    document.getElementById("qrBtn")
-
-  qrBtn.disabled = true
-
-  qrBtn.innerText =
-    "Generating QR..."
-
-  qrBox.style.display = "block"
-
-  document.getElementById("pairBox")
-    .style.display = "none"
-
-  qrImg.src = ""
-
-  try {
-
-    const response =
-      await fetch("/qr")
-
-    const data =
-      await response.json()
-
-    if (data.status === "connected") {
-
-      qrBox.innerHTML = `
-        <h2 style="color:#00ff99">
-          CONNECTED ✅
-        </h2>
-      `
-
-      checkStatus()
-      return
-    }
-
-    if (!data.qr) {
-      throw new Error(
-        data.error || "QR not received"
-      )
-    }
-
-    qrImg.src = data.qr
-
-    const checker =
-      setInterval(async () => {
-
-        try {
-
-          const res =
-            await fetch("/status")
-
-          const s =
-            await res.json()
-
-          if (s.status === "connected") {
-
-            clearInterval(checker)
-
-            qrBox.innerHTML = `
-              <h2 style="color:#00ff99">
-                CONNECTED ✅
-              </h2>
-            `
-
-            checkStatus()
-          }
-
-        } catch {}
-      }, 3000)
-
-  } catch (err) {
-
-    console.log(err)
-
-    qrBox.innerHTML = `
-      <h2 style="color:#ff5555">
-        QR FAILED
-      </h2>
-
-      <p style="margin-top:10px">
-        ${err.message}
-      </p>
-    `
-
-  } finally {
-
-    qrBtn.disabled = false
-
-    qrBtn.innerText =
-      "Use QR Code Instead"
-  }
-}
-
-// =======================
 // INPUT CLEANER
-// =======================
+document.getElementById("number").addEventListener("input", (e) => {
+  e.target.value = e.target.value.replace(/[^0-9]/g, "")
+})
 
-document
-  .getElementById("number")
-  .addEventListener("input", (e) => {
-
-    e.target.value =
-      e.target.value.replace(
-        /[^0-9]/g,
-        ""
-      )
-  })
-
-// =======================
 // AUTO STATUS
-// =======================
-
 checkStatus()
-
-setInterval(
-  checkStatus,
-  10000
-)
-
+setInterval(checkStatus, 10000)
 </script>
 </body>
 </html>
