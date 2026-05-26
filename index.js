@@ -23,6 +23,14 @@ const msgRetryCounterCache = new NodeCache()
 const commands = new Map()
 let sock = null
 
+// Store bot settings globally
+let botSettings = {
+  prefix: config.prefix,
+  botName: config.botName,
+  ownerName: config.ownerName,
+  ownerNumber: config.ownerNumber
+}
+
 // Command loader
 function loadCommands(dir) {
   if (!fs.existsSync(dir)) return
@@ -87,12 +95,12 @@ async function getSocket() {
 
         if (!msgContent) continue
 
-        // Check if message starts with prefix
-        if (!msgContent.startsWith(config.prefix)) continue
+        // Check if message starts with current prefix
+        if (!msgContent.startsWith(botSettings.prefix)) continue
 
         // Parse command and arguments
         const args = msgContent.trim().split(/\s+/)
-        const cmdName = args[0].slice(config.prefix.length).toLowerCase()
+        const cmdName = args[0].slice(botSettings.prefix.length).toLowerCase()
         args.shift()
 
         // Get command
@@ -106,7 +114,7 @@ async function getSocket() {
           sender: message.key.participant || message.key.remoteJid,
           from: message.key.remoteJid,
           isGroup: message.key.remoteJid.endsWith("@g.us"),
-          isOwner: (message.key.participant || message.key.remoteJid).replace(/[^0-9]/g, "") === config.ownerNumber,
+          isOwner: (message.key.participant || message.key.remoteJid).replace(/[^0-9]/g, "") === botSettings.ownerNumber,
           mentionedJid: message.message.extendedTextMessage?.contextInfo?.mentionedJid || [],
           quoted: message.message.extendedTextMessage?.contextInfo?.quotedMessage
             ? {
@@ -124,7 +132,7 @@ async function getSocket() {
         // Execute command
         try {
           console.log(chalk.blue(`[CMD] Executing: ${cmdName} by ${m.sender}`))
-          await command.execute(sock, m, args, cmdName)
+          await command.execute(sock, m, args, cmdName, { commands, botSettings })
         } catch (err) {
           console.log(chalk.red(`[CMD] Error executing ${cmdName}:`), err)
           await sock.sendMessage(message.key.remoteJid, {
