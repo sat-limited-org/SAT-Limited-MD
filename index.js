@@ -7,8 +7,12 @@ const NodeCache = require("node-cache")
 const {
   default: makeWASocket,
   useMultiFileAuthState,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  proto,
+  delay
 } = require("@whiskeysockets/baileys")
+
+const config = require("./config")
 
 const app = express()
 app.use(express.json())
@@ -61,9 +65,76 @@ async function getSocket() {
   })
 
   sock.ev.on("creds.update", saveCreds)
-  sock.ev.on("connection.update", ({ connection }) => {
+  sock.ev.on("connection.update", ({ connection, qr }) => {
     if (connection === "open") console.log(chalk.green("✅ WhatsApp Connected"))
     if (connection === "close") sock = null
+    if (qr) console.log(chalk.yellow("📱 Scan QR Code to connect"))
+  })
+
+  // Message Handler
+  sock.ev.on("messages.upsert", async ({ messages }) => {
+    try {
+      for (const message of messages) {
+        // Skip own messages and non-text messages
+        if (message.key.fromMe || !message.message) continue
+
+        // Extract text content
+        const msgContent = message.message.conversation ||
+          message.message.extendedTextMessage?.text ||
+          message.message.imageMessage?.caption ||
+          message.message.videoMessage?.caption ||
+          ""
+
+        if (!msgContent) continue
+
+        // Check if message starts with prefix
+        if (!msgContent.startsWith(config.prefix)) continue
+
+        // Parse command and arguments
+        const args = msgContent.trim().split(/\s+/)
+        const cmdName = args[0].slice(config.prefix.length).toLowerCase()
+        args.shift()
+
+        // Get command
+        const command = commands.get(cmdName)
+        if (!command) continue
+
+        // Prepare message object with all necessary properties
+        const m = {
+          key: message.key,
+          message: message.message,
+          sender: message.key.participant || message.key.remoteJid,
+          from: message.key.remoteJid,
+          isGroup: message.key.remoteJid.endsWith("@g.us"),
+          isOwner: (message.key.participant || message.key.remoteJid).replace(/[^0-9]/g, "") === config.ownerNumber,
+          mentionedJid: message.message.extendedTextMessage?.contextInfo?.mentionedJid || [],
+          quoted: message.message.extendedTextMessage?.contextInfo?.quotedMessage
+            ? {
+              message: message.message.extendedTextMessage.contextInfo.quotedMessage,
+              sender: message.message.extendedTextMessage.contextInfo.participant
+            }
+            : null,
+          reply: async (text) => {
+            await sock.sendMessage(message.key.remoteJid, {
+              text: text
+            }, { quoted: message })
+          }
+        }
+
+        // Execute command
+        try {
+          console.log(chalk.blue(`[CMD] Executing: ${cmdName} by ${m.sender}`))
+          await command.execute(sock, m, args, cmdName)
+        } catch (err) {
+          console.log(chalk.red(`[CMD] Error executing ${cmdName}:`), err)
+          await sock.sendMessage(message.key.remoteJid, {
+            text: `❌ Error executing command: ${err.message}`
+          })
+        }
+      }
+    } catch (err) {
+      console.log(chalk.red("Message Handler Error:"), err)
+    }
   })
 
   return sock
@@ -96,5 +167,10 @@ module.exports = app
 
 if (require.main === module) {
   const PORT = process.env.PORT || 3000
-  app.listen(PORT, () => console.log(chalk.cyan(`🚀 Server running on ${PORT}`)))
+  getSocket().then(() => {
+    app.listen(PORT, () => console.log(chalk.cyan(`🚀 Server running on ${PORT}`)))
+  }).catch(err => {
+    console.log(chalk.red("Failed to start bot:"), err)
+    process.exit(1)
+  })
 }
