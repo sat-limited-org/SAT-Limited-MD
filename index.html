@@ -45,7 +45,7 @@
     </div>
 
     <button class="btn" id="pairBtn" onclick="generateCode()">Generate Pair Code</button>
-    <button class="btn btn-secondary" disabled title="QR doesn't work on Vercel">Use QR Code Instead</button>
+    <button class="btn btn-secondary" disabled title="QR doesn't work on Render">Use QR Code Instead</button>
 
     <div class="pair-code" id="pairBox">
       <h2>PAIR CODE</h2>
@@ -110,7 +110,7 @@ async function generateCode() {
   } catch (err) {
     console.log(err)
     codeEl.innerText = "ERROR"
-    errorEl.innerText = "Server error. Check Vercel logs."
+    errorEl.innerText = "Server error. Check Render logs."
   } finally {
     btn.disabled = false
     btn.innerText = "Generate Pair Code"
