@@ -1,0 +1,10 @@
+.renderignore
+.git
+.gitignore
+.env.local
+sessions
+node_modules
+npm-debug.log
+.DS_Store
+.vscode
+.idea
