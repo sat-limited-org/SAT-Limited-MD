@@ -36,6 +36,13 @@ module.exports = {
 ┃ Prefix: .
 ╰━━━━━━━━━━━━━━⬣
 
+╭━━〔 📢 JOIN OUR CHANNEL 〕━━⬣
+┃
+┃ https://whatsapp.com/channel/0029Vb8A6Tz8qIzs2X2aFX3n
+┃
+┃ Type .channel for more info
+╰━━━━━━━━━━━━━━⬣
+
 ✨ *Use any command with the dot (.) prefix!*
 > For support, type .owner
 `;
