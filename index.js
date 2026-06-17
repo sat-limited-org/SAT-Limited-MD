@@ -202,7 +202,7 @@ app.get("/pair", async (req, res) => {
 
     const s = await getSocket()
     
-    if (s.authState?.creds?.registered) {
+    if (s.user) {
       return res.json({ status: true, message: "Already connected", connected: true })
     }
 
