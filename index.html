@@ -11,6 +11,7 @@
     .panel{width:90%;max-width:420px;background:#121212;border:1px solid #00ff99;border-radius:20px;padding:30px;box-shadow:0 0 25px rgba(0,255,153,0.3);animation:fadeIn 1s ease;}
     @keyframes fadeIn{from{opacity:0;transform:translateY(20px);}to{opacity:1;transform:translateY(0);}}
     .logo{text-align:center;margin-bottom:25px;}
+    .logo img{width:90px;height:90px;border-radius:50%;border:2px solid #00ff99;box-shadow:0 0 15px rgba(0,255,153,0.4);object-fit:cover;margin-bottom:12px;}
     .logo h1{color:#00ff99;font-size:34px;}
     .logo p{color:#aaa;margin-top:8px;}
     .status{text-align:center;margin-bottom:20px;color:#00ff99;font-weight:bold;}
@@ -33,7 +34,8 @@
   <div class="bg"></div>
   <div class="panel">
     <div class="logo">
-      <h1>🤖 SAT LIMITED MD</h1>
+      <img src="https://i.ibb.co/LzSgPgPf/botdp.jpg" alt="SAT Limited MD Logo">
+      <h1>SAT LIMITED MD</h1>
       <p>WhatsApp Multi Device Bot</p>
     </div>
 
@@ -76,7 +78,6 @@ async function checkStatus() {
   }
 }
 
-// PAIR CODE
 async function generateCode() {
   const number = document.getElementById("number").value.trim().replace(/[^0-9]/g, "")
   const btn = document.getElementById("pairBtn")
@@ -96,7 +97,6 @@ async function generateCode() {
   errorEl.innerText = ""
 
   try {
-    // FIX: Use GET with query param, not POST
     const response = await fetch(`/pair?number=${number}`)
     const data = await response.json()
 
@@ -117,12 +117,10 @@ async function generateCode() {
   }
 }
 
-// INPUT CLEANER
 document.getElementById("number").addEventListener("input", (e) => {
   e.target.value = e.target.value.replace(/[^0-9]/g, "")
 })
 
-// AUTO STATUS
 checkStatus()
 setInterval(checkStatus, 10000)
 </script>
