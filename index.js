@@ -10,7 +10,8 @@ const {
   default: makeWASocket,
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
-  delay
+  delay,
+  DisconnectReason
 } = require("@whiskeysockets/baileys")
 
 const config = require("./config")
@@ -90,6 +91,7 @@ async function getSocket() {
       logger: P({ level: "silent" }),
       browser: ["SAT Limited MD", "Chrome", "1.0.0"],
       printQRInTerminal: false,
+      mobile: false,
       markOnlineOnConnect: false,
       generateHighQualityLinkPreview: false,
       msgRetryCounterCache,
@@ -106,20 +108,23 @@ async function getSocket() {
       }
 
       if (connection === "close") {
-        const code =
+        const statusCode =
           lastDisconnect?.error?.output?.statusCode ||
           lastDisconnect?.error?.statusCode
 
-        const shouldReconnect = code !== 401
+        const shouldReconnect =
+          statusCode !== DisconnectReason.loggedOut
 
         console.log(
-          chalk.yellow(`Connection closed. Reconnecting: ${shouldReconnect}`)
+          chalk.yellow(
+            `⚠ Connection closed. Reconnecting: ${shouldReconnect}`
+          )
         )
 
         sock = null
 
         if (shouldReconnect) {
-          setTimeout(getSocket, 3000)
+          setTimeout(() => getSocket(), 3000)
         }
       }
 
@@ -149,7 +154,6 @@ async function getSocket() {
           args.shift()
 
           const command = commands.get(cmdName)
-
           if (!command) continue
 
           const sender = message.key.participant || message.key.remoteJid
@@ -211,7 +215,7 @@ async function getSocket() {
   }
 }
 
-// Pairing route
+// Pair route
 app.get("/pair", async (req, res) => {
   try {
     const number = req.query.number?.replace(/[^0-9]/g, "")
@@ -225,8 +229,6 @@ app.get("/pair", async (req, res) => {
 
     const s = await getSocket()
 
-    await delay(3000)
-
     if (s.user) {
       return res.json({
         status: true,
@@ -235,11 +237,25 @@ app.get("/pair", async (req, res) => {
       })
     }
 
+    let attempts = 0
+
+    while (!s.ws || s.ws.readyState !== 1) {
+      if (attempts > 10) {
+        return res.json({
+          status: false,
+          message: "Socket not ready"
+        })
+      }
+
+      await delay(2000)
+      attempts++
+    }
+
     const code = await s.requestPairingCode(number)
 
     return res.json({
       status: true,
-      code: code?.match(/.{1,4}/g)?.join("-") || code,
+      code: code.match(/.{1,4}/g).join("-"),
       message: "Pairing code generated"
     })
   } catch (err) {
@@ -276,14 +292,26 @@ app.get("/qr", async (req, res) => {
   }
 })
 
-// Status route
-app.get("/status", (req, res) => {
-  res.json({
-    connected: !!sock?.user,
-    status: sock?.user ? "connected" : "offline",
-    user: sock?.user || null,
-    commands: commands.size
-  })
+// Status route (fixed)
+app.get("/status", async (req, res) => {
+  try {
+    const connected = !!sock?.user
+
+    res.json({
+      status: true,
+      connected,
+      bot: botSettings.botName,
+      owner: botSettings.ownerName,
+      user: connected ? sock.user.id : null,
+      commands: commands.size,
+      uptime: process.uptime()
+    })
+  } catch (err) {
+    res.json({
+      status: false,
+      message: err.message
+    })
+  }
 })
 
 // Homepage
